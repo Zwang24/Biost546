@@ -1,0 +1,959 @@
+---
+title: "Biost546"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(lattice)
+library(uwIntroStats)
+wdbc <- read.csv("~/Downloads/wdbc.data")
+library(uwIntroStats)
+library(dplyr)
+library(pracma)
+library(ggplot2)
+library(MASS)
+library(class)
+options(width = 100)
+library(BBmisc)
+library(ggcorrplot)
+library(glmnet)
+library(pracma)
+library(boot)
+library(randomForest)
+library(tree)
+library(gbm)
+```
+#### Homework 1
+
+## Problem 1
+In this problem, we will make use of the dataset Medical_Cost.RData (introduced in class), which you can find attached on Canvas.
+
+(a) Load the dataset with the command load and check if there are missing data.
+```{r}
+load("/Users/marcy/Downloads/Medical_Cost.RData")
+med <- df
+sapply(med, function(x) sum(is.na(x)))
+```
+After loading the dataset and checking the missing data for each of the column (variable), I found no missing values.
+
+(b) We decide to focus on the outcome variable charges (individual medical costs billed by health insurance) and the predictors bmi (body mass index), and smoker (whether the subjects is a smoker or not). Make a scatterplot with bmi on the x-axis, charges on the y-axis, and with the color of each dot representing whether the subject is a smoker or not.
+```{r}
+xyplot(charges ~ bmi, data=med,groups = smoker, type=c("p","r"), 
+       auto.key = TRUE, lwd=2, xlab="BMI", ylab="Medical bill costs ")
+# plot with regression lines added
+```
+(c) Fit a least-squares linear model, with intercept, in order to predict
+• charges using bmi as the only predictor;
+• charges using bmi and smoker as predictors;
+• charges using bmi and smoker as in the previous model; but allowing for an interaction term between the variables bmi and smoker;
+For each of the three models
+• Present your results in the form of a table where you report the estimated regression coefficients and their interpretation (be careful with the dummy variables).
+• Report the 95% confidence interval for the coefficient of the variable bmi, and provide a sentence explaining the meaning of this confidence interval.
+```{r}
+head(med, 10)
+med$smoking <- ifelse(med$smoker == "yes", 1, 0)
+fit1 <- regress("mean", charges ~ bmi, data = med)
+fit2 <- regress("mean", charges ~ bmi+as.factor(smoking), data = med)
+smokingXbmi <- med$smoking*med$bmi
+fit3 <- regress("mean", charges ~ bmi+smoking+smokingXbmi, data = med)
+# calculate the mean squared error
+mean(fit1$residuals^2)
+mean(fit2$residuals^2)
+mean(fit3$residuals^2)
+# predict the costs with a bmi that is 32 for smoker
+# model 2
+lm1 <- lm(formula = charges ~ bmi+as.factor(smoking), data = med)
+fake.data1 <- data.frame(bmi = 32, smoking = as.factor(1))
+predict(lm1, fake.data1, interval="predict")
+# model 3
+lm2 <- lm(formula = charges ~ bmi*as.factor(smoking), data = med)
+fake.data2 <- data.frame(bmi = 32, smoking = as.factor(1))
+p1 <- predict(lm2, fake.data2, interval="predict")
+# lowering the bmi to 28
+fake.data3 <- data.frame(bmi = 28, smoking = as.factor(1))
+p2 <- predict(lm2, fake.data3, interval = "predict")
+p1 - p2
+```
+For model fit 1, the estimated for the difference in mean medical bill charges between patients with 1 unit difference in BMI is 394. A confidence interval is (281, 507), meaning that it is not unusual to observe the average change to be within this range. It means that if the same population is sampled repetitively and interval estimates are constructed each, the resulting intervals would contain the true population parameter in approximately 95 % of the cases. 
+For model fit 2, the estimated for the difference in mean medical bill charges between patients of the same smoking status with 1 unit difference in BMI is 388. A confidence interval is (322, 454), meaning that it is not unusual to observe the average change to be within this range. The estimated difference of medical cost for patients who are smokers compared to patients who are non-smokers, controlling for bmi value, is 23594. A 95% confidence interval for the estimate is (22388, 24800), meaning that it is not unusual to observe the average change to be within this range.
+For model fit 3, the coefficient of the variable bmi has the value os 83.4, meaning that the difference between medical costs for patients of the same smoking status with 1 unit different in bmi is 83.4. A 95% confidence interval for the estimate is (27.3, 139), meaning that it is not unusual to observe the average change to be within this range.
+
+• Draw (can be hand-sketched) the regression line(s) of the model on the scatter plot produced in point (b) (See also Figure 1 for an example).
+See the above graph.
+
+• Report the (training set) mean squared error of the model.
+The training set mean squared error for model 1 is 140777900, for model 2 is 50126126, and for model 3 is 37841585.
+
+• Predict the medical costs billed by the health insurance company to a smoker with a bmi that is 32.
+Using the second model of having bmi and smoking status as the predictors, the predicted medical costs to a smoker with bmi = 32 is 32551. Using the third model of having the interaction term, the predicted medical costs to a smoker with bmi = 32 is 33953.
+
+• According to the model with interaction, on average, by how much would the charges change if the subject were to lower their bmi to 28.
+The model is: E(cost|bmi, smoking) = 5879 + 83.4bmi - 19066smoking + 1390smokingXbmi.
+For non-smokers, the costs changes to 28060 if the bmi is lower to 28, with a difference of 5892 in medical costs.
+
+(d) Now define and add to the dataset a new boolean variable smoker_bmi30p that is True only if the subject is a smoker and has a bmi greater than 30. Use this newly defined variable, together with bmi and smoker, to fit the linear model represented in Figure 1 by carefully defining the interaction terms (allow each of the three straight lines to have their own intercept and slope, but us the command lm only once).
+```{r}
+med$smoker_bmi30p <- ifelse(med$bmi > 30 & med$smoker == "yes", 1, 0)
+fit1d <- regress("mean", charges ~ bmi*smoking+smoker_bmi30p, data = med)
+
+# table that display the results
+table1d <- matrix(c(fit1d$coefficients[1],fit1d$coefficients[2],fit1d$coefficients[3],
+                    fit1d$coefficients[4],fit1d$coefficients[5]), nrow = 5, byrow = TRUE)
+colnames(table1d) <- c("coefficients")
+rownames(table1d) <- c("Intercept","BMI","Smoking status","Smokers w/BMI>30",
+                         "BMI*Smoking")
+table1d
+
+```
+• Present your results in the form of one table where you report the estimated coefficients of the model.
+
+• For each predictor, comment on whether you can reject the null hy- pothesis that there is no (linear) association between that predictor and charges, conditional on the other predictors in the model.
+For smoking status, the p-value 0.28 is larger than our threshold of significance 0.5, so we failed to reject the null hypothesis that there is no association between smoking status and charges.
+For bmi, the p-value is smaller than 0.05, so we can reject the null hypothesis that there is no association between bmi and charges.
+For smoker_bmi30p, the p-value is smaller than 0.05, so we can to reject the null hypothesis that there is no association between this variable and charges.
+For the bmi and smoking interaction term, the p-value is smaller than 0.05, so we can reject the null hypothesis that there is no association between the interaction and charges.
+
+
+• Explain the interpretation of the non-significant variables in the model (p > 0.05) and explain how Figure 1 would change if we were to discard those variables, i.e. perform variable selection.
+
+
+
+## Problem 2
+For this problem, you will come up with some examples of statistical learning for biomedical or public health applications possibly related to your field.
+(a) Provide three examples of regression problems motivated by biomedical research or public health. In each example, describe Y and X1, . . . , Xp as well as the scientific task and whether the problem is high-dimensional or low-dimensional.
+Example 1: In emergency department, people are interested in predicting hospital length of stay using regression models. In this case, the outcome of interest (Y) is the length of hospital stay, and the predictors (X1, ... Xp) are age, sex, history of medicine taken, history of disease, race/ethnicity and other variables. This problem is low-dimensional, there are not a lot of predictors and the number of patients are much higher.
+Example 2: The presence of necrotic cells in a tumor might be a indicator of mounted immune system. Study can focus on using genes with expression in a tumor micro-environment to predict the proportion of necrotic cells in tumor. The outcome of interest (Y) is the percentgae of necrotic cells in a tumor, and the predictors (X1, ... Xp) are various gene expression data captured by microarray. This example is a high dimensional setting, since getting gene expression data is expensive for a large group of patients, such study only focused on relative few patients but will test over 10,000 genes.
+Example 3: The probability of HIV infection is often of interest for disease prevention. In this example, the outcome of interest is the probability of HIV infection, and the predictor are age, race/ethnicity, frequency of unprotected sex, number of sex partner and age. The data will be low-dimension, as the number of patients are more than the predictors.
+
+(b) Provide three examples of classification problems motivated by biomedical research or public health. In each example, describe Y and X1, . . . , Xp as well as the scientific task and whether the problem is high-dimensional or low-dimensional.
+Example 1: In cancer diagnosis settings, people are interested in predicting whether the tumor is benign or malignant. A dataset that include patients demographic characteristics and clinical measurements as features, and tumor classification as the binary outcome is one example. Depending on whether genetic features of the tumor cells or receptors are captured, this type of analysis can be high-dimensional or low-dimensional.
+Example 2: While using computer to sort mailing addresses, pictures of the hand-written mailing zip codes are taken and the zip codes are identified using statistical learning methods. The pictures contains a lot of pixies and each of the pixie has different degree of blackness, ranging from white to black, and for each of the numbers, there are certain patterns of the pixies. In this example and predictor will be pixies and outcome will be the numbers, this is a high dimensional setting since there are a lot of pixies for each of the case.
+Example 3: Breast cancer is one of the most common cancer and caused many death every year. Many breast cancer studies used their collected data to do breast cancer prediction, based on demographic variables, clinical measurements, mammography measurements and family history of cancer. This is an example of low-dimensional data to do classification.
+
+(c) Provide three examples of unsupervised learning motivated by biomedical research or public health. In each example, describe X1,...,Xp as well as the scientific task and whether the problem is high-dimensional or low- dimensional.
+
+
+# Problem 3
+(a) Make a plot, like the one we saw in class, with “flexibility” on the x- axis. Sketch the following curves: squared bias, variance, irreducible error, reducible error, expected prediction error. Be sure to label each curve. Indicate which level of flexibility is “best”.
+(b) Make a plot with “flexibility” on the x-axis. Sketch curves corresponding to the training error and the test error. Be sure to label each curve. Indicate which level of flexibility is “best”.
+(c) Explain where on the x-axis would a simple regression (p = 1) and a K-nearest neighbors approach (with K = 1) fall. Justify your answer.
+
+# Problem 4
+Suppose that you are interested in performing regression on a particular dataset, and need to decide whether to pick a linear model or a non-parametric model (e.g. KNN).
+
+Describe how the issue of interpretability of the model might drive your choice between a linear model and a non-parametric model.
+Linear models are more interpretable than non-parametric models. The linearity makes the interpretation easy, the coefficients often represents the mean of a certain group or the changes in mean between groups. The outputs are widely understood by researches with different backgrounds. The non-parameteric models make less assumptions in the distribution of the data, and result in better accuracy, but the interpretability decreased since the parameters are not fixed and overall hard to describe for audience without a strong statistical background.
+
+What properties of the dataset would lead you to definitely use a linear model as opposed to a non-parametric approach?
+In cases that the dataset is high-dimensional, that there are a lot more variables than the objects, one might want to choose a linear model since non-parameteric models are even harder to interpret in this case. One example is the lasso regression, which is a type of linear regression that uses shrinkage.
+
+# Problem 5
+Consider using only the region variable to predict charges on the Medical_Cost.RData data set. In this problem, we will explore the coding of this qualitative variable.
+```{r}
+head(med, 10)
+#a
+fit.region1 <- regress("mean", charges~relevel(region, "northwest"), data = med)
+#b
+med$region2 <- ifelse(med$region == "northeast", 1/2, -1/2)
+med$region3 <- ifelse(med$region == "southwest", 1/2, -1/2)
+med$region4 <- ifelse(med$region == "southeast", 1/2, -1/2)
+fit.region2 <- regress("mean", charges~region2+region3+region4, data = med)
+
+
+
+```
+(a) First, code the region variable using three dummy (indicator) variables, with northwest as the default value. Write out the equation of the linear model conditional on all the different values of region and explain the meaning of the intercept and dummy variables.
+E[charges|regions] = 12418 + 989I(region = northeast) +2318I(region = southeast) -70.8I(region = southwest)
+The intercept is the average medical charges for patients from the reference group, which is northwest region. The slope for dummy variable I(region = northeast) is the difference between the medical costs between northeast and northwest on average. The slope for dummy variable I(region = southeast) is the mean difference between the medical costs between southeast and northwest.The slope for dummy variable I(region = northeast) is the difference between the medical costs between southwest and northwest on average.
+
+(b) Now, code the region variable using three variables that take on values of + 1/2 or − 1/2 . Write out the equation of the linear model conditional on all the different values of region and explain the meaning of the intercept and dummy variables.
+E[charges|regions] = 14036 + 989I(region = northeast) +2318I(region = southeast) -70.8I(region = southwest)
+The intercept is the mean cost of medical bills for people from the northwest region plus half of the mean difference of the medical bills for people who lives in or not in the northeast region and the mean difference of the medical bills for people who lives in or not in the southeast region, and minus the difference in the average cost of medical bills for people who lives in or not in the southwest region is -70.8
+The indicator variable I(region = northeast) takes value of 1/2 if the region is northeest and -1/2 otherwise. The coefficient means the difference in the average cost of medical bills for people who lives in or not in the northeast region is 989.
+The indicator variable I(region = southeast) takes value of 1/2 if the region is southeast and -1/2 otherwise. The coefficient means the difference in the average cost of medical bills for people who lives in or not in the southeast region is 2318.
+The indicator variable I(region = southwest) takes value of 1/2 if the region is southwest and -1/2 otherwise. The coefficient means the difference in the average cost of medical bills for people who lives in or not in the southwest region is -70.8.
+
+##### Homework 2
+
+# Question 1
+a) The sample size n is 568, there are 31 predictors p, and the number of observations in class M is 212, the number of observations in class B is 357.
+b) See the code
+c) After plotting the two predictors and displaying the two classes of Y using different colors, I think it will be hard to acurrately predict the outcome from the predictions, since from the plot, we can see that for X1 being 10-15, the two categories of outcomes are mixed and there is no clear boundary.
+d) See the code
+e) $prob(Y = M | (X1,X2) = (10,12)) =  0.001221$
+The answer I got using the predict function returns a probability of 0.001223.There is only a small difference between.
+f) The calculated probability from log odds is 0.6682.
+```{r}
+sub.wdbc <- wdbc[,c(2,3,4)]
+sub.wdbc$cancer <- ifelse(sub.wdbc$M == "M",1,0)
+# sample size
+nrow(wdbc)
+# predictors
+ncol(wdbc) - 1
+# obs in each class
+table(wdbc$M)
+# split the data into training and testing
+set.seed(111)
+train_id = sample(nrow(sub.wdbc), 400)
+train <- sub.wdbc[train_id,]
+test  <- sub.wdbc[-train_id,]
+# plot
+xyplot(X10.38 ~ X17.99, data=train,groups = M, type=c("p","r"), 
+       auto.key = TRUE, lwd=2, xlab="Average radius of the cell nuceli", ylab="Average texture of the cell nuclei")
+# logistic regression
+glm1 <- glm(formula = cancer ~ X17.99 + X10.38,  family = binomial(link = "logit"),data = train)
+summary(glm1)
+coeffs <- c("Intercept","Beta 1","Beta 2")
+values <- c(as.numeric(glm1$coefficients[1]),as.numeric(glm1$coefficients[2]),as.numeric(glm1$coefficients[3]))
+intepretation <- c("Not of scientific interest, log odds of being malignant when the predictors are 0",
+                "Log odds ratios comparing groups with the same value of X2 and differing by one unit in X1",
+                 "Log odds ratios comparing groups with the same value of X1 and differing by one unit in X2")
+options(width = 50)
+data.frame(intepretation,coeffs, values)
+# problem e
+# by hand calculation
+odds_e <- exp(glm1$coefficients[1]+glm1$coefficients[2]*10+glm1$coefficients[3]*12)
+prob_e <- odds_e/(1+odds_e)
+# using the predict function
+fake.data1 <- data.frame(X17.99 = 10, X10.38 = 12)
+pred1 <- predict(glm1, fake.data1, interval="predict")
+exp(pred1[1])
+# problem f
+# convert the log odds to odds, then use odds to calculate probbability
+odds1 <- exp(0.7)
+probs1 <- odds1/(1+odds1)
+```
+Logistic regression
+g) The prediction accuracy for the training set is 0.8975 and the prediction accuracy for the testing set is 0.869. We expect to see that the prediction accuracy for the testing set is lower than the training set. However, while exploring the data splitting using different seeds, I also observed that the accuracy for the training set is lower than the testing set. One reason can be that since the dataset is splitted into training and testing randomly, the testing set outcome is easier to predict than the training set outcome. Usually we can only observe a decrease in prediction accuracy for the test set.
+```{r}
+# Training set performances
+glm.prob.train <- predict(glm1,type = "response")
+glm.label.train <- rep(0, nrow(train))
+glm.label.train[glm.prob.train > .5] <- 1
+tt.glm.train <- table(glm.label.train, train$cancer)
+tt.glm.train
+glm.train.acc <- mean(glm.label.train == train$cancer)
+glm.train.acc
+# Test set performances
+glm.prob.test <- predict(glm1,type = "response", newdata = test)
+glm.label.test = rep(0, nrow(test))
+glm.label.test[glm.prob.test > .5] = 1
+tt.glm.test <- table(glm.label.test, test$cancer) # want diagnoal as small as possible
+tt.glm.test
+glm.test.acc <- mean(glm.label.test == test$cancer)
+glm.test.acc
+```
+h) Decision boundary
+All three decision boundaries are linear, and with the probability of diagnosed as bengin increases from 0.25 to 0.75, the decision boundaries shift accordingly. With the training set plotted, we can see that smaller values on both the x and y axis tend to lead the lda model to predict someone as having benign findings and larger values on the two axis are more likely to lead to malignant findings.
+```{r}
+# generate the grid
+dense <- expand.grid(train$X10.38, train$X17.99)
+set1 <- sample_n(dense, 10000)
+set1$X10.38 <- set1$Var1
+set1$X17.99 <- set1$Var2
+hset <- predict(glm1,type = "response", newdata = set1)
+# plot
+plot.logit <- function(p){
+set1$outcome <- ifelse(hset > p, 1,0)
+ggplot() + 
+geom_point(aes(set1$X17.99,set1$X10.38, colour=as.factor(set1$outcome))) +
+  labs(x="Average radius of the cell nuceli", y="Average texture of the cell nuclei",
+color = "Diagnosis in the grid", title = "Logistic regression method decision boundary") +
+  scale_color_hue(labels = c("Benign", "Malignant")) +
+  geom_point(aes(train$X17.99,train$X10.38, shape=as.factor(train$cancer))) +
+  labs(shape = "Diagnosis in the training set") +
+  scale_shape_discrete(labels = c("Benign", "Malignant"))
+}
+plot.logit(0.5)
+plot.logit(0.25)
+plot.logit(0.75)
+#xyplot(X10.38 ~ X17.99, data=set1,groups = outcome, type=c("p","r"), 
+      # auto.key = TRUE, lwd=2, xlab="Average radius of the cell nuceli", ylab="Average texture of the cell nuclei")
+#plot(X10.38~ X17.99, data=set1, col=set1$plot.outcome, pch = 20,cex = 0.4)
+#points(train$X10.38, train$X17.99)
+```
+i) & j)
+The ROC curve and AUC are shown in the markdown results. The AUC for ROC is 0.9417.
+```{r}
+n_segm = 21
+TPR = replicate(n_segm, 0)
+FPR = replicate(n_segm, 0)
+p_th = seq(0,1,length.out = n_segm)
+
+for (i in 1:n_segm)
+{
+  itest = rep(0, nrow(test))
+  itest[glm.prob.test > p_th[i]] <- 1
+  
+  tt.glm.test = table(itest, test$cancer)
+  TPR[i] = mean(itest[test$cancer == 1] == test$cancer[test$cancer == 1])
+  FPR[i] = mean(itest[test$cancer == 0] != test$cancer[test$cancer == 0])
+}
+
+roc1 <- ggplot() +
+  geom_line(aes(x = FPR, y = TPR)) + geom_point(aes(x = FPR, y = TPR)) +
+  labs(x="False positive rate", y="True positive rate", title = "ROC curve for using the logistic regression method")
+roc1
+AUC.glm <- abs(trapz(FPR,TPR))# pracma package trapz(FPR, TPR)
+AUC.glm
+```
+
+# Question 2 LDA
+a) Prior probability of group 0 is the probability of having a benign finding before the next prediction. Prior probability of group 1 is the probability of having a malignant finding before the next prediction. The group mean for X10.38 for group 0 is the average texture value for benign group, the group mean for X10.38 for group 1 is the average texture value for malignant group. The group mean for X17.99 for group 0 is the average radius value for benign group, the group mean for X17.99 for group 1 is the average radius value for malignant group. With those values we can estimate the posterior probabilities following this equation: $\frac{\pi_{k}f_{k}}{\sum_{l=1}^{K}\pi_{l}f_{l}(x)}$, where $\pi_{k}$ is prior density, $f_{k}$ is the density function of X for an observation coming from class k = {0 or 1}.
+b) The training set has an accuracy of 0.895 and the testing set has an accuracy value of 0.8571. The prediction accuracy for the testing set is lower than the training set, and we are expecting to observe this decrease.
+```{r}
+# the lda model
+lda.model <-  lda(cancer ~X17.99+X10.38, data = train, center = TRUE, scale = TRUE)
+lda.names <- c("Prior probabilities of benign", "Prior probabilities of malignant",
+               "Groups means average texture of benign","Groups means average texture of malignant",
+               "Groups means average radius of benign","Groups means average radius of malignant")
+lda.values <- c(lda.model$prior[1],lda.model$prior[2],lda.model$means[1,1],lda.model$means[2,1],
+                lda.model$means[2,1],lda.model$means[2,2])
+data.frame(lda.names,lda.values)
+# coefficients gives a variable that is the most predictive to the outcome
+# table the prior probabilities and group means
+# predict outcome Y
+lda.pred.train <- predict(lda.model, train)
+names(lda.pred.train) # class: predicted class
+lda.pred.test <- predict(lda.model, test)
+# calculating confusion table and accuracy
+# for the training
+tt.lda.train <- table(lda.pred.train$class, train$cancer)
+tt.lda.train
+lda.train.acc <- mean(lda.pred.train$class == train$cancer)
+lda.train.acc
+# for the testing
+tt.lda.test <- table(lda.pred.test$class, test$cancer)
+tt.lda.test
+lda.test.acc <- mean(lda.pred.test$class == test$cancer)
+lda.test.acc
+# if not 0.5, which is default for the upper code
+# lda.pred.test_cutoff = rep(0, nrow(test))
+# lda.pred.test_cutoff[lda.pred.test$posterior[,2] > .5] = 1 # bayes rule
+
+```
+c) Plotting for LDA
+The decision boundaries for the three probabilities are linear, and the boundary moves to the larger values of x as the probabilities of classifying malignant increases. With the training set plotted, we can see that smaller values on both the x and y axis tend to lead the lda model to predict someone as having benign findings and larger values on the two axis are more likely to lead to malignant findings.
+```{r}
+lda.set <- predict(lda.model,type = "response", newdata = set1)
+
+plot.lda <- function(p){
+set1$outcome <- ifelse(lda.set$posterior[,2] > p, 1,0)
+ggplot() + 
+geom_point(aes(set1$X17.99,set1$X10.38, colour=as.factor(set1$outcome))) +
+  labs(x="Average radius of the cell nuceli", y="Average texture of the cell nuclei",
+color = "Diagnosis in the grid", title = "LDA method decision boundary") +
+  scale_color_hue(labels = c("Benign", "Malignant")) +
+  geom_point(aes(train$X17.99,train$X10.38, shape=as.factor(train$cancer))) +
+  labs(shape = "Diagnosis in the training set") +
+  scale_shape_discrete(labels = c("Benign", "Malignant"))
+}
+plot.lda(0.5)
+plot.lda(0.25)
+plot.lda(0.75)
+```
+d) & e) ROC for lda and AUC
+The AUC value is 0.9449.
+```{r}
+TPR.lda = replicate(n_segm, 0)
+FPR.lda = replicate(n_segm, 0)
+
+for (i in 1:n_segm)
+{
+  test.lda = rep(0, nrow(test))
+  test.lda[lda.pred.test$posterior[,2] > p_th[i]] <- 1
+  TPR.lda[i] = mean(test.lda[test$cancer == 1] == test$cancer[test$cancer == 1])
+  FPR.lda[i] = mean(test.lda[test$cancer == 0] != test$cancer[test$cancer == 0])
+}
+
+roc2 <- ggplot() +
+  geom_line(aes(x = FPR.lda, y = TPR.lda)) + geom_point(aes(x = FPR.lda, y = TPR.lda)) +
+  labs(x="False positive rate", y="True positive rate", title = "ROC curve for using the LDA method")
+roc2
+AUC.lda <- abs(trapz(FPR.lda,TPR.lda))# pracma package trapz(FPR, TPR)
+AUC.lda
+```
+# Question 3 QDA
+a) Prior probability of group 0 is the probability of having a benign finding before the next prediction. Prior probability of group 1 is the probability of having a malignant finding before the next prediction. The group mean for X10.38 for group 0 is the average texture value for benign group, the group mean for X10.38 for group 1 is the average texture value for malignant group. The group mean for X17.99 for group 0 is the average radius value for benign group, the group mean for X17.99 for group 1 is the average radius value for malignant group. With those values we can estimate the posterior probabilities following this equation: $\frac{\pi_{k}f_{k}}{\sum_{l=1}^{K}\pi_{l}f_{l}(x)}$, where $\pi_{k}$ is prior density, $f_{k}$ is the density function of X for an observation coming from class k = {0 or 1}.
+b) The training set has an accuracy of 0.9 and the testing set has an accuracy value of 0.8631. The prediction accuracy for the testing set is lower than the training set, and we are expecting to observe this decrease.
+```{r}
+# the lda model
+qda.model <-  qda(cancer ~  X17.99+X10.38, data = train, center = TRUE)
+# coefficients gives a variable that is the most predictive to the outcome
+# table the prior probabilities and group means
+qda.names <- c("Prior probabilities of benign", "Prior probabilities of malignant",
+               "Groups means average texture of benign","Groups means average texture of malignant",
+               "Groups means average radius of benign","Groups means average radius of malignant")
+qda.values <- c(qda.model$prior[1],qda.model$prior[2],qda.model$means[1,1],qda.model$means[2,1],
+                qda.model$means[2,1],qda.model$means[2,2])
+data.frame(qda.names,qda.values)
+# predict outcome Y
+qda.pred.train <- predict(qda.model, train)
+qda.pred.test <- predict(qda.model, test)
+# calculating confusion table and accuracy
+# for the training
+(tt.qda.train <- table(qda.pred.train$class, train$cancer))
+(qda.train.acc <- mean(qda.pred.train$class == train$cancer))
+# for the testing
+(tt.qda.test <- table(qda.pred.test$class, test$cancer))
+(qda.test.acc <- mean(qda.pred.test$class == test$cancer))
+
+# if not 0.5, which is default for the upper code
+# lda.pred.test_cutoff = rep(0, nrow(test))
+# lda.pred.test_cutoff[lda.pred.test$posterior[,2] > .5] = 1 # bayes rule
+
+```
+c) Plotting for QDA
+The decision boundary for a QDA model is curved, since quadratic relationship between the predictors and outcomes are taken into account in the QDA model. The boundary moves to the larger values of x as the probabilities of classifying malignant increases. With the training set plotted, we can see that smaller values on both the x and y axis tend to lead the lda model to predict someone as having benign findings and larger values on the two axis are more likely to lead to malignant findings. The curveness of the boundary decreases as probability of classification decreases. So when p=0.75, the decision boundary looks more similar to the decision boundary of a LDA model at the same probability.
+```{r}
+qda.set <- predict(qda.model,type = "response", newdata = set1)
+
+plot.qda <- function(p){
+set1$outcome <- ifelse(qda.set$posterior[,2] > p, 1,0)
+ggplot() + 
+geom_point(aes(set1$X17.99,set1$X10.38, colour=as.factor(set1$outcome))) +
+  labs(x="Average radius of the cell nuceli", y="Average texture of the cell nuclei",
+color = "Diagnosis in the grid", title = "QDA method decision boundary") +
+  scale_color_hue(labels = c("Benign", "Malignant")) +
+  geom_point(aes(train$X17.99,train$X10.38, shape=as.factor(train$cancer))) +
+  labs(shape = "Diagnosis in the training set") +
+  scale_shape_discrete(labels = c("Benign", "Malignant"))
+}
+plot.qda(0.5)
+plot.qda(0.25)
+plot.qda(0.75)
+```
+d) and e) ROC and AUC for lda
+The AUC for the qda model is 0.9527.
+```{r}
+TPR.qda = replicate(n_segm, 0)
+FPR.qda = replicate(n_segm, 0)
+
+for (i in 1:n_segm)
+{
+  test.qda = rep(0, nrow(test))
+  test.qda[qda.pred.test$posterior[,2] > p_th[i]] <- 1
+  TPR.qda[i] = mean(test.qda[test$cancer == 1] == test$cancer[test$cancer == 1])
+  FPR.qda[i] = mean(test.qda[test$cancer == 0] != test$cancer[test$cancer == 0])
+}
+
+roc3 <- ggplot() +
+  geom_line(aes(x = FPR.qda, y = TPR.qda)) + geom_point(aes(x = FPR.qda, y = TPR.qda)) +
+  labs(x="False positive rate", y="True positive rate", title = "ROC curve for using the QDA method")
+roc3
+(AUC.qda <- abs(trapz(FPR.qda,TPR.qda)))# pracma package trapz(FPR, TPR)
+
+```
+# Question 4 KNN
+a) The training set accuracy values are 1.0000, 0.9350, 0.9375, 0.9225, 0.9125 for k values of 1,2,3,4,20. The accuracy for a k of 1 in the training set is 1 because the model is fitted perfected on the training set (overfitted). The accuracy decreases because as more neighboring pointed are included, the model fit is less and less perfect on the training set.
+The testing set accuracy values are 0.8095 0.8333 0.8631 0.8452 0.8690, the values increases as the k values increases since the overfitting effect decreases.
+```{r}
+# make sure variables are numerical
+train_num <- train[,c("X17.99","X10.38")]
+test_num <- test[,c("X17.99","X10.38")]
+# write a loop for accuracy
+k.num <- c(1,2,3,4,20)
+mean.knn.train <- rep(5,0)
+mean.knn.test <- rep(5,0)
+mat1 <- matrix(data=NA, nrow=10, ncol=2)
+# 
+for (i in 1:5){
+knn.train.pred <- knn(train = train_num, test = train_num, cl = train$cancer, k=k.num[i])
+mean.knn.train[i] <- mean(knn.train.pred == train$cancer)
+knn.test.pred <- knn(train = train_num, test = test_num, cl = train$cancer, k=k.num[i])
+mean.knn.test[i] <- mean(knn.test.pred == test$cancer)
+}
+# construct confusion tables
+######### k = 1
+# train
+knn.train.pred1 <- knn(train = train_num, test = train_num, cl = train$cancer, k=k.num[1])
+table(knn.train.pred, train$cancer)
+# test
+knn.test.pred1 <- knn(train = train_num, test = test_num, cl = train$cancer, k=k.num[1])
+table(knn.test.pred, test$cancer)
+######### k = 2
+# train
+knn.train.pred2 <- knn(train = train_num, test = train_num, cl = train$cancer, k=k.num[2])
+table(knn.train.pred2, train$cancer)
+# test
+knn.test.pred2 <- knn(train = train_num, test = test_num, cl = train$cancer, k=k.num[2])
+table(knn.test.pred2, test$cancer)
+######### k = 3
+# train
+knn.train.pred3 <- knn(train = train_num, test = train_num, cl = train$cancer, k=k.num[3])
+table(knn.train.pred3, train$cancer)
+# test
+knn.test.pred3 <- knn(train = train_num, test = test_num, cl = train$cancer, k=k.num[3])
+table(knn.test.pred3, test$cancer)
+######### k = 4
+# train
+knn.train.pred4 <- knn(train = train_num, test = train_num, cl = train$cancer, k=k.num[4])
+table(knn.train.pred4, train$cancer)
+# test
+knn.test.pred4 <- knn(train = train_num, test = test_num, cl = train$cancer, k=k.num[4])
+table(knn.test.pred4, test$cancer)
+######### k = 20
+# train
+knn.train.pred20 <- knn(train = train_num, test = train_num, cl = train$cancer, k=k.num[5])
+table(knn.train.pred20, train$cancer)
+# test
+knn.test.pred20 <- knn(train = train_num, test = test_num, cl = train$cancer, k=k.num[5])
+table(knn.test.pred20, test$cancer)
+mean.knn.train
+mean.knn.test
+```
+b) Plot decision boundary for kNN
+The decision boundaries are less obvious for the kNN models, and the smoothness increases as the k value increases. When k = 1, the boundary is very rough, that there are regions of different diagnosis embedded into a large region. When k = 20, the boundary becomes much smoother, that there is a clear separation between the two outcomes.Unlike the above other models, the boundary line itself does not move horizontally.
+```{r}
+plot.knn <- function(k){
+set1$knn.train <- knn(train = train_num, test = set1[,c("X17.99","X10.38")], cl = train$cancer, k)
+ggplot() + 
+geom_point(aes(set1$X17.99,set1$X10.38, colour=as.factor(set1$knn.train))) +
+  labs(x="Average radius of the cell nuceli", y="Average texture of the cell nuclei",
+color = "Diagnosis in the grid", title = "kNN method decision boundary") +
+  scale_color_hue(labels = c("Benign", "Malignant")) +
+  geom_point(aes(train$X17.99,train$X10.38, shape=as.factor(train$cancer))) +
+  labs(shape = "Diagnosis in the training set") +
+  scale_shape_discrete(labels = c("Benign", "Malignant"))
+}
+plot.knn(1)
+plot.knn(2)
+plot.knn(3)
+plot.knn(4)
+plot.knn(20)
+```
+
+c) Plot the prediction accuracy
+The computed prediction accuracy for the two datasets are listed and plotted. I will pick the k value that gives the largest accuracy on the test set, which is k=6.
+Comparing the two lines, the accuracy for the training set decreases as K increases and seems to output steady results for k > 5. However for the testing set, the accuracy increases as K increases and seems to output steady results for k > 5. For small values of k, the model is likely to get overfitted, leading to much lower accuracy on the testing set.
+```{r}
+nkset <- 20
+kset <- 1:20
+set.knn.train <- rep(nkset,0)
+set.knn.test <- rep(nkset,0)
+
+
+for (i in kset){
+knn.train.pred <- knn(train = train_num, test = train_num, cl = train$cancer, k=kset[i])
+set.knn.train[i] <- mean(knn.train.pred == train$cancer)
+knn.test.pred <- knn(train = train_num, test = test_num, cl = train$cancer, k=kset[i])
+set.knn.test[i] <- mean(knn.test.pred == test$cancer)
+}
+
+plot4.dat <- data.frame(kset,set.knn.train,set.knn.test)
+plot4.dat
+
+plot4.dat %>% ggplot() + 
+geom_line(aes(x =kset, y = set.knn.train, colour="Train")) +
+ geom_line(aes(x = kset, y = set.knn.test, colour = "Test")) +
+  scale_colour_manual("", 
+                      values = c("Train"="green", "Test"="blue")) +
+  xlab('K values') +
+  ylab('Prediction accuracy')
+# Make the selection based on the test set
+knn.best.test <- max(set.knn.test)
+which.max(set.knn.test)
+knn.train.6 <- set.knn.train[6]
+```
+# Question 5
+After compiling the model results, I find that the accuracy for the training set tends to be higher than the accuracy for the testing set overall, with the highest accuracy occurring when we used the kNN method with k = 1. This result is very likely to be caused by overfitting, since with k=1, the model will fit the training set perfectly and perform poorly on the testing set. LDA model returns the lowest accuracy, possibly due to some non-normality in the dataset, and the LDA model rely heavily on the normality assumptions. The accuracy obtained for the QDA model on the training set is also quite high, since the model is really flexible and it will be natural to return high accuracy for the training set.The logistic regression model also returned  quite high accuracy on the training set.
+For the testing set accuracy, the kNN model with k = 6 is the most accurate. The logistic regression, lda and qda returned lower accuracy values, and the lda model has the lowest among those three. This might be a result of non-normality in the testing set. The accuracy for the kNN model as K increases also increases, and one possible explanation is that as k increases there will be less overfitting.
+The kNN method is a non-parametric approach that does not have any distributional assumptions, so it has advantage over the other parametric methods in getting the highest estimated accuracy. To mitigate this issue, we can increase the number of observations in the training set by using leave one out validation or k-fold cross validations, since that will allow the models to fit on more data points. We can also make sure that the assumptions for the other three models are met before running them, for example check whether the data is normally distribution befor using the LDA method.
+```{r}
+train.values <- c(glm.train.acc,lda.train.acc,qda.train.acc,knn.train.6,
+                  mean.knn.train)
+test.values <- c(glm.test.acc,lda.test.acc,qda.test.acc,knn.best.test,
+                  mean.knn.test)
+model.names <- c("Logistic regression","LDA","QDA","kNN k = 6","kNN k = 1","kNN k = 2","kNN k = 3","kNN k = 4","kNN k = 20")
+data.frame(model.names,train.values,test.values)
+```
+
+#### Homework 3
+## Problem 1
+a) and b) See the codes below
+c) ii. The best lambda value picked by the lasso regression is 0.02516, I picked this value since it generated the lowest mean squared error
+iii. The fitted model is $3.396823 - 1.876747x + 2.470690x^2 + 0.003475x^3 + 0.022497x^6$. We can see that $x$, $x^2$,$x^3$,$x^6$ are selected in the model by the picked lambda value to generate the lowest mean squared error.
+```{r}
+##### a
+set.seed(1)
+X <- rnorm(n=30, mean=0, sd=1)
+eplison <- rnorm(n=30, mean=0, sd=1)
+#### b
+Y <- 3 - 2*X + 3*(X)^2 + eplison
+#### c
+mat1 <- matrix(c(Y,X,X^2,X^3,X^4,X^5,X^6,X^7), ncol = 8, byrow = FALSE)
+fit1 <- glmnet(mat1[,c(2:8)], mat1[,1], alpha=1)
+#plot(fit.cv1$beta[2,]~fit.cv1$lambda, type = "l")
+plot(fit1, xvar = "lambda", label = TRUE) # need caption
+legend("topright", legend = c("beta 2", "beta 4", "beta 6","beta 1"), col = c("red", "green","blue","black"), lty = rep(1, 2), lwd = rep(2, 2), cex = 1, bty = "n")
+fit.cv1 <- cv.glmnet(mat1[,c(2:8)], mat1[,1], alpha=1)
+# The best lambda
+plot(fit.cv1)
+best.lambda <- fit.cv1$lambda.min
+fit.cv.full <- glmnet(mat1[,c(2:8)], mat1[,1], alpha =1, lambda = best.lambda)
+lasso.full.coef = predict(fit.cv.full, type = "coefficients", s = best.lambda)
+lasso.full.coef
+#lasso.full.coef[lasso.full.coef!=0]
+#length(lasso.full.coef[lasso.full.coef!=0])
+```
+d) The mean squared error is 1.079.
+```{r}
+set.seed(1)
+X2 <- rnorm(n=1000, mean=0, sd=1)
+eplison2 <- rnorm(n=1000, mean=0, sd=1)
+Y2 <- 3 - 2*X2 + 3*X2^2 + eplison2
+mat2 <- matrix(c(Y2,X2,X2^2,X2^3,X2^4,X2^5,X2^6,X2^7), ncol = 8, byrow = FALSE)
+fit.cv.full2 <- glmnet(mat2[,c(2:8)], mat2[,1], alpha =1, lambda = best.lambda)
+lasso.full.coef = predict(fit.cv.full2, type = "coefficients", s = best.lambda)
+lasso.full.coef
+lasso.pred = predict(fit.cv.full2, newx = mat2[,c(2:8)])
+mean((lasso.pred-mat2[,1])^2)
+```
+# Problem 2
+a) The sample size n is 569, there are 30 predictors p, and the number of observations in class M is 212, the number of observations in class B is 357.
+b) See the code
+c) We should perform the normalization step because we need to fit models separately in the training and testing set, and the normalization depends on the values of the dataset so this step must be done separately.
+d) From the calculated correlation matrix and the plot, we can observe that there are several variables that are highly correlated in this dataset. For example, V3 and V5 have a correlation of 0.998. This can lead to multi-collinearity problem that one predictor variable in a multiple regression model can be linearly predicted from the others with a high degree of accuracy, and cause misleading results.
+e) The coefficient for X1 is 863.00, and the coefficient for X3 is 989.13.The magnitude of these two values are relatively large compared to the other coefficients.The correlation between the two variables is 0.9978. There are coefficients for each of the variables, so the glm is not doing any variable selections. 
+f) The prediction accuracy for the training set is 1, and the confusion table is shown in the R results.
+The prediction accuracy for the testing set is 0.9408. Using the logistic regression, the training set is perfectly fitted, but the testing set accuracy is lowered a lot.
+```{r}
+wdbc <- read.csv("~/Downloads/wdbc.data", header=FALSE)
+dim(wdbc)
+# obs in each class
+table(wdbc$V2)
+# split the data into training and testing
+set.seed(2)
+train_id = sample(nrow(wdbc), 400)
+train <- wdbc[train_id,]
+test  <- wdbc[-train_id,]
+# normalize
+norm_train <- normalize(train[,c(3:32)], method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
+norm_test <- normalize(test[,c(3:32)], method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
+# compute correlation matrix of training predictors
+cor_train <- cor(norm_train)
+ggcorrplot(cor_train)
+# get the logistic regression model
+normal_train <- data.frame(train$V2, norm_train)
+normal_train$outcome <- ifelse(normal_train$train.V2 == "M", 1, 0)
+normal_train <- normal_train[,-1]
+glm1 <- glm(outcome ~ .,  family = binomial, data = normal_train)
+summary(glm1)
+cor(normal_train$V3, normal_train$V5)
+# get the testing set
+normal_test <- data.frame(test$V2, norm_test)
+normal_test$outcome <- ifelse(normal_test$test.V2 == "M", 1, 0)
+normal_test <- normal_test[,-1]
+# train
+pred.train.glm <- predict(glm1, normal_train, type = "response")
+glm.label.train = rep(0, nrow(normal_train))
+glm.label.train[pred.train.glm > .5] = 1
+mean((glm.label.train==normal_train$outcome)^2)
+table(glm.label.train,normal_train$outcome)
+# test
+pred.test.glm <- predict(glm1, norm_test, type = "response")
+glm.label.test = rep(0, nrow(normal_test))
+glm.label.test[pred.test.glm > .5] = 1
+mean((glm.label.test==normal_test$outcome)^2)
+table(glm.label.test,normal_test$outcome)
+```
+
+# Problem 3: Ridge logistic regression
+a) and b) See the codes
+c) As lambda value increases, the coefficients approaches zero at different speed, that the coefficients for the variables that are the least efficient in the estimation with skrink the fastest. So based on this plot, we can see that the variable X3 is less efficient in this estimation.
+d) The optimal lambda value is 0.003678
+e) All the fitted coefficients are different from 0. This is due to the fact that Ridge regression does not use lambda parameters to set coefficients to 0.
+f) The prediction accuracy is 0.99 from the training set and 0.9822 for the testing set. The prediction accuracy for the testing set is lower since we are fitting the model to the testing set instead.
+```{r}
+x.ridge = model.matrix(outcome ~ -1+., data = normal_train) # don't want to penalize the intercept
+y.ridge = normal_train$outcome
+
+grid = 10^seq(5,-18,length =100)
+ridge.mod = glmnet(x.ridge, y.ridge, alpha=0,lambda = grid, family = binomial)
+#ridge.mod$lambda[1]
+#ridge.mod$beta[1,]
+# plot
+plot(ridge.mod$beta[1,]~log(ridge.mod$lambda), type = "l", xlab = "Log lambda", ylab = "Coefficient values", main = "Coefficient beta1, beta3 in function of log lambda")
+lines(ridge.mod$beta[3,]~log(ridge.mod$lambda), col = "blue")
+legend("bottomright", legend = c("beta 1", "beta 3"), col = c("black", "blue"), lty = rep(1, 2), lwd = rep(2, 2), cex = 1, bty = "n")
+dim(ridge.mod$beta)
+# cv
+cv.ridge <- cv.glmnet(x.ridge, y.ridge, alpha=0,lambda = grid, family = binomial,type.measure = "class")
+plot(cv.ridge)
+cv.ridge$lambda.min
+ridge.coef <- coef(cv.ridge, s=cv.ridge$lambda.min)
+ridge.coef[ridge.coef!=0]
+# compute predicted outcome for the training set
+ridge.pred <- predict(cv.ridge, s = cv.ridge$lambda.min, newx = x.ridge, type = "response")
+ridge.label.train = rep(0, nrow(x.ridge))
+ridge.label.train[ridge.pred > .5] = 1
+mean((ridge.label.train==y.ridge)^2)
+# confusion table
+table(ridge.label.train, y.ridge)
+# For the testing set
+# get the model matrix
+x.ridge.test = model.matrix(outcome ~ -1+., data = normal_test) # don't want to penalize the intercept
+y.ridge.test = normal_test$outcome
+ridge.pred.test <- predict(cv.ridge, s = cv.ridge$lambda.min, newx = x.ridge.test, type = "response")
+ridge.label.test = rep(0, nrow(x.ridge.test))
+ridge.label.test[ridge.pred.test > .5] = 1
+mean((ridge.label.test==y.ridge.test)^2)
+# confusion table
+table(ridge.label.test, y.ridge.test)
+```
+g) The roc plot:
+h) The AUC is 0.9986
+```{r}
+n_segm = 21
+TPR = replicate(n_segm, 0)
+FPR = replicate(n_segm, 0)
+p_th = seq(0,1,length.out = n_segm)
+
+for (i in 1:n_segm)
+{
+  itest = rep(0, nrow(x.ridge.test))
+  itest[ridge.pred.test > p_th[i]] <- 1
+  
+  tt.ridge.test = table(itest, y.ridge.test)
+  TPR[i] = mean(itest[y.ridge.test == 1] == y.ridge.test[y.ridge.test == 1])
+  FPR[i] = mean(itest[y.ridge.test == 0] != y.ridge.test[y.ridge.test == 0])
+}
+
+roc1 <- ggplot() +
+  geom_line(aes(x = FPR, y = TPR)) + geom_point(aes(x = FPR, y = TPR)) +
+  labs(x="False positive rate", y="True positive rate", title = "ROC curve for using the Ridge regression method")
+roc1
+abs(trapz(FPR,TPR))
+
+
+
+```
+# Problem 4
+a) and b) See the codes
+c) As lambda value increases, the coefficients approaches zero at different speed, that the coefficients for the variables that are the least efficient will be set to 0 due to the penalization by lasso regression. So based on this plot, we can see that the variable X3 is less efficient in this estimation.
+d) The optimal lambda value is 0.002154
+e) There are 16 fitted coefficients that are different from 0. Using the penalizing lambda selected from cross validation, coefficients other than these 16 were set to 0s for the minimized error.
+f) The calculated MSE is 0.99 from the training set and 0.9822 for the testing set. The accuracy for the testing set is lower since we are fitting the model to the testing set instead.
+```{r}
+x.lasso = model.matrix(outcome ~ -1+., data = normal_train) # don't want to penalize the intercept
+y.lasso = normal_train$outcome
+
+lasso.mod = glmnet(x.ridge, y.ridge, alpha=1,lambda = grid, family = binomial)
+#ridge.mod$lambda[1]
+#ridge.mod$beta[1,]
+# plot
+plot(lasso.mod$beta[1,]~log(lasso.mod$lambda), type = "l", xlab = "Log lambda", ylab = "Coefficient values", main = "Coefficient beta1, beta3 in function of log lambda")
+lines(lasso.mod$beta[3,]~log(lasso.mod$lambda), col = "blue")
+legend("bottomright", legend = c("beta 1", "beta 3"), col = c("black", "blue"), lty = rep(1, 2), lwd = rep(2, 2), cex = 1, bty = "n")
+dim(ridge.mod$beta)
+# cv
+cv.lasso <- cv.glmnet(x.lasso, y.lasso, alpha=1,lambda = grid, family = binomial,type.measure = "class")
+plot(cv.lasso)
+cv.lasso$lambda.min
+lasso.coef <- coef(cv.lasso, s=cv.lasso$lambda.min)
+length(lasso.coef[lasso.coef!=0])
+# compute predicted outcome for the training set
+lasso.pred <- predict(cv.lasso, s = cv.lasso$lambda.min, newx = x.lasso, type = "response")
+lasso.label.train = rep(0, nrow(x.lasso))
+lasso.label.train[lasso.pred > .5] = 1
+mean((lasso.label.train==y.lasso)^2)
+# confusion table
+table(lasso.label.train, y.lasso)
+# For the testing set
+x.lasso.test = model.matrix(outcome ~ -1+., data = normal_test) # don't want to penalize the intercept
+y.lasso.test = normal_test$outcome
+lasso.pred.test <- predict(cv.lasso, s = cv.lasso$lambda.min, newx = x.lasso.test, type = "response")
+lasso.label.test = rep(0, nrow(x.lasso.test))
+lasso.label.test[lasso.pred.test > .5] = 1
+mean((lasso.label.test==y.lasso.test)^2)
+# confusion table
+table(lasso.label.test, y.lasso.test)
+```
+g) ROC plot is shown below
+h) AUC value is 0.9986.
+```{r}
+n_segm = 21
+TPR.l = replicate(n_segm, 0)
+FPR.l = replicate(n_segm, 0)
+p_th = seq(0,1,length.out = n_segm)
+
+for (i in 1:n_segm)
+{
+  itest.l = rep(0, nrow(x.lasso.test))
+  itest.l[lasso.pred.test > p_th[i]] <- 1
+  
+  tt.lasso.test = table(itest.l, y.lasso.test)
+  TPR.l[i] = mean(itest.l[y.lasso.test == 1] == y.lasso.test[y.lasso.test == 1])
+  FPR.l[i] = mean(itest.l[y.lasso.test == 0] != y.lasso.test[y.lasso.test == 0])
+}
+
+roc1.l <- ggplot() +
+  geom_line(aes(x = FPR.l, y = TPR.l)) + geom_point(aes(x = FPR.l, y = TPR.l)) +
+  labs(x="False positive rate", y="True positive rate", title = "ROC curve for using the Lasso regression method")
+roc1.l
+abs(trapz(FPR.l,TPR.l))
+
+```
+
+# Problem 5
+First to look at the accuracy measurement, the simple glm model has accuracy of 0.9408 on the test set, and both the Ridge and Lasso glm yields a prediction accuracy of 0.9822 on the test set. The Ridge regression model has an auc of 0.9986 and lasso glm has an auc of 0.9986. Overall, the simple glm has the lowest accuracy, and the Ridge and Lasso glm has the same accuracy when predicting. In terms of the interpretability, the simple glm alone is easier to understand than Ridge and Lasso since it does not impoase any regularizations, however without feature selection, its intepretability decreases. The Lasso regression offers better intepretability since it provides a selection based on variables, and only picked a subset of variables. Since the Ridge regression does not have the additional feature selection, it will return a model with the exact number of features and lowered intepretability.
+
+#### Homework 4
+
+## Problem 1
+1. In this exercise, you will generate a simulated dataset and perform non-linear regression. Make sure you set the random seed with set.seed(2) before you begin.
+(a) - (g) 
+The variance evaluated at X = 0 for the spline model with lambda = 1e-3 is 0.00094, and the The variance evaluated at X = 0 for the spline model with lambda = 1e-7 is 0.004. From the plots we made previously, we can see that when lambda is set to 1e-7, the spline curves seems to overfit the data by trying to go through every points.
+```{r}
+# a
+set.seed(2)
+X <- runif(50, -1, 1)
+epsilon <- rnorm(50, 0, 0.1)
+# b
+Y <- 3 - 2*X + 3*X^3 + epsilon
+# c
+fit1 <- smooth.spline(X,Y, lambda = 1e-3)
+fit2 <- smooth.spline(X,Y, lambda = 1e-7)
+# d
+grid <- seq(-1,1,length.out = 500)
+Y.grid <- 3 - 2*grid + 3*grid^3
+fit1.grid <- predict(fit1, x = grid)
+fit2.grid <- predict(fit2, x = grid)
+ggplot() + 
+geom_point(aes(X,Y, color = "Original Y")) +
+geom_point(aes(grid, Y.grid, color = "f evaluated on grid")) +
+geom_point(aes(grid, fit1.grid$y, color = "spline 1")) +
+geom_point(aes(grid, fit2.grid$y, color = "spline 2")) +
+labs(y="Different y values", color = "Different y values", title = "Results") 
+# e
+fit3 <- smooth.spline(X,Y, cv=TRUE)
+fit3.grid <- predict(fit3, x = grid)
+# f
+ggplot() + 
+geom_point(aes(X,Y, color = "Original Y")) +
+geom_point(aes(grid, Y.grid, color = "f evaluated on grid")) +
+geom_point(aes(grid, fit3.grid$y, color = "cv spline")) +
+labs(y="Different y values", color = "Different y values", title = "Results") 
+# g: boostrap
+dat <- data.frame(X,Y)
+sp1 <- function(data, indices){
+  d <- dat[indices,]
+  fit1 <- smooth.spline(d$X,d$Y, lambda = 1e-3)
+  pred <- predict(fit1, x = 0)
+  pred$y
+}
+results <- boot(data = dat, statistic = sp1, R=1000)
+var(results$t)
+#
+sp2 <- function(data, indices){
+  d <- dat[indices,]
+  fit2 <- smooth.spline(d$X,d$Y, lambda = 1e-7)
+  pred <- predict(fit2, x = 0)
+  pred$y
+}
+results2 <- boot(data = dat, statistic = sp2, R=1000)
+var(results2$t)
+```
+
+# Question 2
+a) The total sample size n is 371 observations, and there are 12 predictors. Among these participants, 200 of them have heart disease and 171 of them do not have heart disease.
+b) see the output
+c) The training error is 0.115 and the testing error is 0.234. We are expecting to see that testing error to be higher than the training error. The error values are relatively small meaning that the overgrown tree did fine with predicting the true outcomes.
+d) The subtree size that leads to the smallest misclassification error is 8.
+e) The testing set error is 0.263 and the training set error is 0.155. Again we are observing a higher error for the testing set, and compared to the results we got from the overgrown tree, the misclassification errors does decrease for both the training and the testing set, this might be due to the specific seed we choose.
+```{r}
+# a
+load("/Users/marcy/Downloads/heart (1).RData")
+df <- full
+df$Disease <- as.factor(ifelse(df$Disease == "Heart Disease",1,0))
+nrow(df)
+ncol(df)
+table(df$Disease)
+set.seed(2)
+train_ids = sample(nrow(df), 200)
+test_ids = seq(nrow(df))[-train_ids]
+data_all = df # all data
+data_train = df[train_ids,] # training data
+data_test = df[test_ids,]
+
+# b overgrown tree
+tree.med<-tree(Disease~.,data_train) # Apply tree
+summary(tree.med)
+#tree.med$frame # descriptions
+# b visualizations
+plot(tree.med)
+text(tree.med,cex = 0.75)
+
+# c testing error
+tree.y.test <- predict(tree.med, newdata =data_test, type="class")
+mean(tree.y.test != data_test$Disease)
+# c training error
+tree.y.train <- predict(tree.med, newdata =data_train, type="class")
+mean(tree.y.train != data_train$Disease)
+
+# d: pruning
+set.seed(2)
+cv.med=cv.tree(tree.med,FUN=prune.misclass)
+cv.med
+plot(cv.med$size,cv.med$dev,type="b", xlab = "Subtree size", ylab = "Misclassification error")
+best <- cv.med$size[which.min(cv.med$dev)]
+best
+# the original tree
+plot(tree.med)
+text(tree.med,cex = 0.75)
+# the pruned tree
+prune.med<-prune.tree(tree.med,best=best)
+plot(prune.med)
+text(prune.med,pretty=0)
+
+# e: testing and training error on the pruned tree
+prune.yhat<-predict(prune.med,newdata=data_train,type="class")
+mean(prune.yhat != data_train$Disease)
+
+prune.yhat.test<-predict(prune.med,newdata=data_test,type="class")
+mean(prune.yhat.test != data_test$Disease)
+```
+f) The misclassification rate for the training set is 0, and the misclassification rate for the testing set after bagging is 0.228. The error for the training set decreases to 0, meaning that the prediction is perfect for the training set. However, for the testing set, the error almost reaches to the error of the overgrown tree.
+```{r bagging}
+set.seed(2)
+bag.med<-randomForest(Disease~.,data_train, mtry = 12, importance=TRUE)
+bag.med
+
+yhat.bag.train<-predict(bag.med,newdata=data_train, type = "class")
+mean(yhat.bag.train != data_train$Disease)
+
+yhat.bag.test<-predict(bag.med,newdata=data_test, type = "class")
+mean(yhat.bag.test != data_test$Disease)
+```
+g) Using the random forest model with the number of features being $p/3 = 4$, we obtained the misclassification rate of the training set is 0, and the error rate of the testing set is 0.211. The testing set error is the smallest when compared to the error obtained from the overgrown tree, pruned tree and the bagging method.
+```{r random forest}
+set.seed(2)
+rf.med<-randomForest(Disease~.,data=data_train,mtry = 4, importance=TRUE)
+yhat.rf.train <-predict(rf.med,newdata=data_train)
+mean(yhat.rf.train != data_train$Disease)
+
+yhat.rf.test <-predict(rf.med,newdata=data_test)
+mean(yhat.rf.test != data_test$Disease)
+```
+h) For the bagging method, many different training datasets are used to build separate prediction models, this process is really similar to bootstrapping, that each time a new set of observations are selected at random. So the randomness of the bagging method result comes from that process.
+For the random forest method, we are putting the limit of using only randomly sampled m predictors for every bagged tree. The randomness comes from the sampling of m predictors for the random forest method, along with the bootstrapping randomness of the bagging.
+i) The misclassification rate of the boosted tree model on the training set is 0 with a threshold of disease being 0.5, meaning the prediction is perfect. The misclassification rate of the model on the testing set is 0.193. We can see from the boosting approach, the misclassification rate is lowered again from the overgrown tree and is the lowest among the values obtained from all the above other methods.
+```{r boosted}
+set.seed(2)
+data_train$Disease <- as.numeric(as.character(data_train$Disease))
+boost.med<- gbm(Disease~.,data=data_train,distribution="bernoulli",n.trees=500,interaction.depth=2,shrinkage=0.1)
+# training error
+yhat.boost.train.prob <- predict(boost.med, newdata=data_train, n.trees=500, type ="response")
+yhat.boost.train = rep(0, nrow(data_train))
+yhat.boost.train[yhat.boost.train.prob > 0.5] <- 1
+mean(yhat.boost.train!=data_train$Disease)
+
+# testing error
+yhat.boost.test.prob <- predict(boost.med, newdata=data_test, n.trees=500, type ="response")
+yhat.boost.test = rep(0, nrow(data_test))
+yhat.boost.test[yhat.boost.test.prob > 0.5] <- 1
+mean(yhat.boost.test!=data_test$Disease)
+
+
+```
